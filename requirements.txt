@@ -1,4 +1,6 @@
 streamlit
-transformers
-torch
-python-docx
+python-dotenv
+PyPDF2
+langchain
+faiss-cpu
+huggingface-hub
