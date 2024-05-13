@@ -1,64 +1,104 @@
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForQuestionAnswering, pipeline
-import tempfile
-from docx import Document
-import os
+from dotenv import load_dotenv
+from PyPDF2 import PdfReader
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationalRetrievalChain
+from htmlTemplates import css, bot_template, user_template
+from langchain.llms import HuggingFaceHub
 
-# Retrieve the API key from Streamlit's secrets management
-api_key = st.secrets["HUGGINGFACE_API_KEY"]
+def get_pdf_text(pdf_docs):
+    text = ""
+    for pdf in pdf_docs:
+        pdf_reader = PdfReader(pdf)
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+    return text
 
-# Initialize the QA model and tokenizer with the API key for authentication
-tokenizer = AutoTokenizer.from_pretrained("deepset/roberta-base-squad2", token=api_key)
-model = AutoModelForQuestionAnswering.from_pretrained("tiiuae/falcon-7b", token=api_key)
-qa_pipeline = pipeline("question-answering", model=model, tokenizer=tokenizer)
 
-def extract_text_from_docx(file_path):
-    """ Load Word document text using python-docx """
-    try:
-        doc = Document(file_path)
-        paragraphs = [p.text for p in doc.paragraphs if p.text.strip() != '']
-        full_text = ' '.join(paragraphs)  # Combine into a single string for QA context
-        return full_text
-    except Exception as e:
-        st.error("Failed to read the document. Please check the file format.")
-        return None
+def get_text_chunks(text):
+    text_splitter = CharacterTextSplitter(
+        separator="\n",
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len
+    )
+    chunks = text_splitter.split_text(text)
+    return chunks
 
-class ChatBot:
-    def __init__(self):
-        self.context = None
 
-    def load_document(self, file_input):
-        """ Load document and prepare it for QA """
-        if file_input is not None:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
-                tmp_file.write(file_input.getvalue())
-                file_path = tmp_file.name
+def get_vectorstore(text_chunks):
+    # embeddings = OpenAIEmbeddings()
+    embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
+    vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
+    return vectorstore
 
-            self.context = extract_text_from_docx(file_path)
-            if self.context:
-                st.success("Document loaded successfully!")
-            os.remove(file_path)
+
+def get_conversation_chain(vectorstore):
+    # llm = ChatOpenAI()
+    llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
+
+    memory = ConversationBufferMemory(
+        memory_key='chat_history', return_messages=True)
+    conversation_chain = ConversationalRetrievalChain.from_llm(
+        llm=llm,
+        retriever=vectorstore.as_retriever(),
+        memory=memory
+    )
+    return conversation_chain
+
+
+def handle_userinput(user_question):
+    response = st.session_state.conversation({'question': user_question})
+    st.session_state.chat_history = response['chat_history']
+
+    for i, message in enumerate(st.session_state.chat_history):
+        if i % 2 == 0:
+            st.write(user_template.replace(
+                "{{MSG}}", message.content), unsafe_allow_html=True)
         else:
-            st.error("Please upload a Word document.")
+            st.write(bot_template.replace(
+                "{{MSG}}", message.content), unsafe_allow_html=True)
 
-    def answer_query(self, question):
-        """ Use the QA model to answer a question based on the loaded document """
-        if self.context is None:
-            st.error("Load a document first.")
-            return "No document loaded."
 
-        answer = qa_pipeline({'question': question, 'context': self.context})
-        return answer['answer']
+def main():
+    load_dotenv()
+    st.set_page_config(page_title="Chat with multiple PDFs",
+                       page_icon=":books:")
+    st.write(css, unsafe_allow_html=True)
 
-# Set up the Streamlit UI
-st.title('TINT-Bot for QA')
-chat_bot = ChatBot()
+    if "conversation" not in st.session_state:
+        st.session_state.conversation = None
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = None
 
-file_input = st.file_uploader("Upload Word Document", type=['docx'])
-if file_input is not None:
-    chat_bot.load_document(file_input)
+    st.header("Chat with multiple PDFs :books:")
+    user_question = st.text_input("Ask a question about your documents:")
+    if user_question:
+        handle_userinput(user_question)
 
-query = st.text_input("Enter your question:")
-if query:
-    response = chat_bot.answer_query(query)
-    st.text(f"Response: {response}")
+    with st.sidebar:
+        st.subheader("Your documents")
+        pdf_docs = st.file_uploader(
+            "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
+        if st.button("Process"):
+            with st.spinner("Processing"):
+                # get pdf text
+                raw_text = get_pdf_text(pdf_docs)
+
+                # get the text chunks
+                text_chunks = get_text_chunks(raw_text)
+
+                # create vector store
+                vectorstore = get_vectorstore(text_chunks)
+
+                # create conversation chain
+                st.session_state.conversation = get_conversation_chain(
+                    vectorstore)
+
+
+if __name__ == '__main__':
+    main() 
