@@ -5,6 +5,11 @@ from docx import Document
 import tempfile
 import datetime
 
+from transformers import pipeline
+api_key = st.secrets["HUGGINGFACE_API_KEY"] 
+classifier = pipeline("text-classification", model="bert-base-uncased", token_classification=True, use_auth_token='api_key')
+result = classifier("Here is some text to classify")
+
 # Set up tokenizer and model for embeddings
 tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 model = AutoModel.from_pretrained("bert-base-uncased")
