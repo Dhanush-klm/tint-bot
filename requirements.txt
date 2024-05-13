@@ -1,6 +1,9 @@
-streamlit
-python-dotenv
-PyPDF2
+﻿streamlit
+pypdf2
 langchain
+python-dotenv
 faiss-cpu
-huggingface-hub
+openai
+huggingface-hub==0.14.1
+InstructorEmbedding==1.0.1
+sentence-transformers==2.2.2
