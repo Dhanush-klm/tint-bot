@@ -9,7 +9,7 @@ api_key = st.secrets["HUGGINGFACE_API_KEY"]
 
 # Initialize the QA model and tokenizer with the API key for authentication
 tokenizer = AutoTokenizer.from_pretrained("deepset/roberta-base-squad2", token=api_key)
-model = AutoModelForQuestionAnswering.from_pretrained("deepset/roberta-base-squad2", token=api_key)
+model = AutoModelForQuestionAnswering.from_pretrained("tiiuae/falcon-7b", token=api_key)
 qa_pipeline = pipeline("question-answering", model=model, tokenizer=tokenizer)
 
 def extract_text_from_docx(file_path):
