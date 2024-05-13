@@ -9,8 +9,8 @@ import os
 api_key = st.secrets["HUGGINGFACE_API_KEY"]
 
 # Initialize the tokenizer and model for embeddings with the API key for authentication
-tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", token=api_key)
-model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", token=api_key)
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", token=api_key,force_download=True)
+model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", token=api_key,force_download=True)
 
 def extract_text_from_docx(file_path):
     """ Load Word document text using python-docx """
