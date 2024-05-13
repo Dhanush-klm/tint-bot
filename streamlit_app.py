@@ -9,8 +9,8 @@ import os
 api_key = st.secrets["HUGGINGFACE_API_KEY"]
 
 # Initialize the tokenizer and model for embeddings with the API key for authentication
-tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", use_auth_token=api_key)
-model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", use_auth_token=api_key)
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", token=api_key)
+model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", token=api_key)
 
 def extract_text_from_docx(file_path):
     """ Load Word document text using python-docx """
@@ -64,7 +64,7 @@ class ChatBot:
         return self.documents[top_result_idx]
 
 # Set up the Streamlit UI
-st.title('Document-Based Q&A System')
+st.title('TINT-Bot')
 chat_bot = ChatBot()
 
 file_input = st.file_uploader("Upload Word Document", type=['docx'])
