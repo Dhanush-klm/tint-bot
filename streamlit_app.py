@@ -3,76 +3,75 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 from docx import Document
 import tempfile
-import datetime
+import os
 
-from transformers import pipeline
-api_key = st.secrets["HUGGINGFACE_API_KEY"] 
-classifier = pipeline("text-classification", model="bert-base-uncased", token_classification=True, use_auth_token='api_key')
-result = classifier("Here is some text to classify")
+# Retrieve the API key from Streamlit's secrets management
+api_key = st.secrets["HUGGINGFACE_API_KEY"]
 
-# Set up tokenizer and model for embeddings
-tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-model = AutoModel.from_pretrained("bert-base-uncased")
+# Initialize the tokenizer and model for embeddings with the API key for authentication
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", use_auth_token=api_key)
+model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", use_auth_token=api_key)
 
-def load_db(file_input):
-    if file_input is not None:
-        # Use a temporary file to save the uploaded file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
-            tmp_file.write(file_input.read())
-            file_path = tmp_file.name
-    else:
-        raise ValueError("No file uploaded")
+def extract_text_from_docx(file_path):
+    """ Load Word document text using python-docx """
+    try:
+        doc = Document(file_path)
+        return [p.text for p in doc.paragraphs if p.text.strip() != '']
+    except Exception as e:
+        st.error("Failed to read the document. Please check the file format.")
+        return None
 
-    # Load Word document text
-    doc = Document(file_path)
-    documents = [p.text for p in doc.paragraphs if p.text.strip() != '']
-    
-    # Encode documents
-    encoded_input = tokenizer(documents, padding=True, truncation=True, return_tensors='pt')
+def embed_text(text_list):
+    """ Generate embeddings for a list of text documents """
+    encoded_input = tokenizer(text_list, padding=True, truncation=True, return_tensors='pt', max_length=512)
     with torch.no_grad():
         model_output = model(**encoded_input)
-    embeddings = model_output.last_hidden_state.mean(dim=1)  # Average pooling
-    
-    return embeddings, documents
+    embeddings = model_output.pooler_output  # Use the pooler output for sentence embeddings
+    return embeddings
 
 class ChatBot:
     def __init__(self):
         self.embeddings = None
         self.documents = []
-        self.history = []
 
-    def load_db(self, file_input):
-        self.embeddings, self.documents = load_db(file_input)
-        st.success("File loaded and embeddings created!")
+    def load_documents(self, file_input):
+        """ Load and embed documents from the uploaded file """
+        if file_input is not None:
+            # Temporary save file to disk to read with Document
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
+                tmp_file.write(file_input.getvalue())
+                file_path = tmp_file.name
 
-    def search_documents(self, query):
+            documents = extract_text_from_docx(file_path)
+            if documents:
+                self.embeddings = embed_text(documents)
+                self.documents = documents
+                st.success("File loaded and embeddings created!")
+            # Clean up the temporary file
+            os.remove(file_path)
+        else:
+            st.error("Please upload a Word document.")
+
+    def answer_query(self, query):
+        """ Find the document section most relevant to the query """
         if self.embeddings is None:
             st.error("Load a document file first.")
-            return
+            return "No document loaded."
 
-        query_enc = tokenizer(query, return_tensors='pt', padding=True, truncation=True)
-        with torch.no_grad():
-            query_emb = model(**query_enc).last_hidden_state.mean(dim=1)
-
-        # Compute similarities (cosine)
+        query_emb = embed_text([query])
         cos_sim = torch.nn.functional.cosine_similarity(query_emb, self.embeddings, dim=1)
         top_result_idx = cos_sim.argmax()
         return self.documents[top_result_idx]
 
-    def answer_query(self, query):
-        response = self.search_documents(query)
-        self.history.append((query, response))
-        return response
-
-# Streamlit UI setup
-st.title('Document-Based Q&A with Hugging Face')
+# Set up the Streamlit UI
+st.title('Document-Based Q&A System')
 chat_bot = ChatBot()
 
 file_input = st.file_uploader("Upload Word Document", type=['docx'])
 if file_input is not None:
-    chat_bot.load_db(file_input)
+    chat_bot.load_documents(file_input)
 
-query = st.text_input("Ask a question:")
+query = st.text_input("Enter your question:")
 if query:
     response = chat_bot.answer_query(query)
     st.text(f"Response: {response}")
