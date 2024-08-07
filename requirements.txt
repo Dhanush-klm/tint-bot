@@ -1,9 +1,5 @@
-﻿streamlit
-pypdf2
-langchain
+fastapi
+uvicorn
 python-dotenv
-faiss-cpu
+langchain
 openai
-huggingface-hub==0.14.1
-InstructorEmbedding==1.0.1
-sentence-transformers==2.2.2
