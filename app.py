@@ -1,12 +1,14 @@
 import os
-from dotenv import load_dotenv
 from flask import Flask, render_template_string, request, jsonify
 import openai
-load_dotenv()
+from openai import OpenAI
+
 app = Flask(__name__)
+
 
 # Set your OpenAI API key
 openai.api_key = os.getenv('OPENAI_API_KEY')
+client = OpenAI(api_key=openai.api_key)
 
 # HTML template for the frontend
 HTML_TEMPLATE = '''
@@ -103,7 +105,7 @@ def chat():
     user_message = request.json['message']
     
     # Call OpenAI API
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
@@ -111,7 +113,7 @@ def chat():
         ]
     )
     
-    bot_response = response.choices[0].message['content']
+    bot_response = response.choices[0].message.content.strip()
     return jsonify({'response': bot_response})
 
 if __name__ == '__main__':
