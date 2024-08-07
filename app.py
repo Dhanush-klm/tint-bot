@@ -1,14 +1,45 @@
 import os
 from flask import Flask, render_template_string, request, jsonify
-import openai
-from openai import OpenAI
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationChain
+from langchain.prompts import ChatPromptTemplate
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 
+# Access your API key
+api_key = os.getenv('OPENAI_API_KEY')
 
-# Set your OpenAI API key
-openai.api_key = os.getenv('OPENAI_API_KEY')
-client = OpenAI(api_key=openai.api_key)
+# Set environment variables
+os.environ["OPENAI_API_KEY"] = api_key
+
+# Initialize the ChatOpenAI model
+model = ChatOpenAI(
+    model_name="gpt-3.5-turbo",
+    temperature=0.4,
+    openai_api_key=os.environ["OPENAI_API_KEY"]
+)
+
+# Create the prompt template
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("human", "{input}"),
+    ("ai", "{history}")
+])
+
+# Initialize conversation memory
+memory = ConversationBufferMemory(return_messages=True)
+
+# Initialize the ConversationChain
+chain = ConversationChain(
+    llm=model,
+    memory=memory,
+    prompt=prompt
+)
 
 # HTML template for the frontend
 HTML_TEMPLATE = '''
@@ -17,7 +48,7 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatbot</title>
+    <title>KLM-Buddy</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -30,38 +61,36 @@ HTML_TEMPLATE = '''
             padding: 20px;
             height: 400px;
             overflow-y: scroll;
+            margin-bottom: 20px;
         }
         #user-input {
             width: 100%;
             padding: 10px;
-            margin-top: 10px;
+            margin-bottom: 10px;
         }
-        #send-button {
-            display: block;
-            width: 100%;
+        #send-button, #clear-button {
             padding: 10px;
-            margin-top: 10px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            cursor: pointer;
+            margin-right: 10px;
         }
     </style>
 </head>
 <body>
-    <h1>Chatbot</h1>
+    <h1>KLM-Buddy</h1>
+    <p>Ask me bro!!</p>
     <div id="chat-container"></div>
-    <input type="text" id="user-input" placeholder="Type your message...">
+    <input type="text" id="user-input" placeholder="Enter your question...">
     <button id="send-button">Send</button>
+    <button id="clear-button">Clear Conversation</button>
 
     <script>
         const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
         const sendButton = document.getElementById('send-button');
+        const clearButton = document.getElementById('clear-button');
 
-        function addMessage(message, isUser) {
+        function addMessage(role, content) {
             const messageElement = document.createElement('p');
-            messageElement.textContent = `${isUser ? 'You' : 'Bot'}: ${message}`;
+            messageElement.innerHTML = `<strong>${role}:</strong> ${content}`;
             chatContainer.appendChild(messageElement);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
@@ -69,7 +98,7 @@ HTML_TEMPLATE = '''
         async function sendMessage() {
             const message = userInput.value.trim();
             if (message) {
-                addMessage(message, true);
+                addMessage('Human', message);
                 userInput.value = '';
 
                 const response = await fetch('/chat', {
@@ -81,11 +110,17 @@ HTML_TEMPLATE = '''
                 });
 
                 const data = await response.json();
-                addMessage(data.response, false);
+                addMessage('AI', data.response);
             }
         }
 
+        async function clearConversation() {
+            chatContainer.innerHTML = '';
+            await fetch('/clear', { method: 'POST' });
+        }
+
         sendButton.addEventListener('click', sendMessage);
+        clearButton.addEventListener('click', clearConversation);
         userInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 sendMessage();
@@ -104,17 +139,17 @@ def home():
 def chat():
     user_message = request.json['message']
     
-    # Call OpenAI API
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": user_message}
-        ]
-    )
-    
-    bot_response = response.choices[0].message.content.strip()
-    return jsonify({'response': bot_response})
+    try:
+        # Get the response from the chain
+        response = chain.predict(input=user_message)
+        return jsonify({'response': response})
+    except Exception as e:
+        return jsonify({'response': f"An error occurred: {str(e)}"}), 500
+
+@app.route('/clear', methods=['POST'])
+def clear_conversation():
+    memory.clear()
+    return '', 204
 
 if __name__ == '__main__':
     app.run(debug=True)
